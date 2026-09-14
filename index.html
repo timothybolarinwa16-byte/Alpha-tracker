@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+  >
+
+  <title>Alpha Tracker</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <header class="topbar">
+
+    <div class="brand">
+      <h1>Alpha Tracker</h1>
+      <span id="connectionStatus">Disconnected</span>
+    </div>
+
+    <div class="pair-control">
+
+      <label for="pairInput">Pair</label>
+
+      <input
+        id="pairInput"
+        type="text"
+        value="BTCUSDT"
+        autocomplete="off"
+        spellcheck="false"
+      >
+
+      <button id="loadPairBtn">
+        Load
+      </button>
+
+    </div>
+
+  </header>
+
+
+  <main class="app">
+
+    <!-- MARKET OVERVIEW -->
+
+    <section class="panel market-panel">
+
+      <div class="panel-header">
+
+        <h2>Market</h2>
+
+        <span id="marketPair">
+          BTCUSDT
+        </span>
+
+      </div>
+
+
+      <div class="market-grid">
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Price
+          </span>
+
+          <strong id="currentPrice">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            24h Change
+          </span>
+
+          <strong id="priceChange">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            24h Volume
+          </span>
+
+          <strong id="volume24h">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Trades
+          </span>
+
+          <strong id="tradeCount">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- TRADE INSPECTION -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Trade Inspection
+          </h2>
+
+          <p class="panel-description">
+            Trades grouped by price range inside
+            the selected time window.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="controls">
+
+        <div class="control">
+
+          <label for="tradeStart">
+            Start
+          </label>
+
+          <input
+            id="tradeStart"
+            type="datetime-local"
+          >
+
+        </div>
+
+
+        <div class="control">
+
+          <label for="tradeEnd">
+            End
+          </label>
+
+          <input
+            id="tradeEnd"
+            type="datetime-local"
+          >
+
+        </div>
+
+
+        <div class="control">
+
+          <label for="priceBucket">
+            Price Bucket
+          </label>
+
+          <input
+            id="priceBucket"
+            type="number"
+            value="0.20"
+            min="0.00000001"
+            step="0.01"
+          >
+
+        </div>
+
+      </div>
+
+
+      <div class="action-row">
+
+        <button
+          id="inspectTradesBtn"
+          class="primary"
+        >
+          Inspect Trades
+        </button>
+
+      </div>
+
+
+      <div class="table-wrapper">
+
+        <table id="tradeTable">
+
+          <thead>
+
+            <tr>
+              <th>Price Range</th>
+              <th>Trades</th>
+              <th>Volume</th>
+              <th>Buy</th>
+              <th>Sell</th>
+              <th>Flow</th>
+            </tr>
+
+          </thead>
+
+
+          <tbody id="tradeTableBody">
+
+            <tr>
+
+              <td
+                colspan="6"
+                class="empty-state"
+              >
+                No trade data loaded.
+              </td>
+
+            </tr>
+
+          </tbody>
+
+        </table>
+
+      </div>
+
+    </section>
+
+
+    <!-- FLOW -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Flow
+          </h2>
+
+          <p class="panel-description">
+            Aggressive buying and selling pressure
+            derived from real trades.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="metric-grid">
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Buy Volume
+          </span>
+
+          <strong id="buyVolume">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Sell Volume
+          </span>
+
+          <strong id="sellVolume">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Net Flow
+          </span>
+
+          <strong id="netFlow">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Volume Density
+          </span>
+
+          <strong id="volumeDensity">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ORDER BOOK -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Order Book
+          </h2>
+
+          <p class="panel-description">
+            Liquidity displayed by price level.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <!-- Independent order-book range selector -->
+
+      <div class="controls">
+
+        <div class="control">
+
+          <label for="orderBookRange">
+            Price Range (%)
+          </label>
+
+          <input
+            id="orderBookRange"
+            type="number"
+            value="0.20"
+            min="0.01"
+            step="0.01"
+          >
+
+        </div>
+
+
+        <div class="control">
+
+          <label for="orderBookLevels">
+            Levels
+          </label>
+
+          <input
+            id="orderBookLevels"
+            type="number"
+            value="20"
+            min="1"
+            max="100"
+          >
+
+        </div>
+
+      </div>
+
+
+      <div class="action-row">
+
+        <button
+          id="loadOrderBookBtn"
+          class="primary"
+        >
+          Load Order Book
+        </button>
+
+      </div>
+
+
+      <div class="orderbook">
+
+        <div class="orderbook-side asks">
+
+          <h3>
+            Asks
+          </h3>
+
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Price</th>
+                <th>Quantity</th>
+                <th>Value</th>
+              </tr>
+
+            </thead>
+
+
+            <tbody id="asksBody">
+
+              <tr>
+
+                <td
+                  colspan="3"
+                  class="empty-state"
+                >
+                  No data
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+
+        <div class="orderbook-side bids">
+
+          <h3>
+            Bids
+          </h3>
+
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>Price</th>
+                <th>Quantity</th>
+                <th>Value</th>
+              </tr>
+
+            </thead>
+
+
+            <tbody id="bidsBody">
+
+              <tr>
+
+                <td
+                  colspan="3"
+                  class="empty-state"
+                >
+                  No data
+                </td>
+
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- INDICATORS -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Indicators
+          </h2>
+
+          <p class="panel-description">
+            Compiled from the normalized market data.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="indicator-grid">
+
+        <div class="indicator">
+
+          <span>
+            Cumulative Flow
+          </span>
+
+          <strong id="cumulativeFlow">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span>
+            Volume Density
+          </span>
+
+          <strong id="densityIndicator">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span>
+            Maker/Taker Balance
+          </span>
+
+          <strong id="makerBalance">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="indicator">
+
+          <span>
+            Trade Efficiency
+          </span>
+
+          <strong id="tradeEfficiency">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <footer>
+
+    <span>
+      Alpha Tracker
+    </span>
+
+    <span id="lastUpdated">
+      Last update: --
+    </span>
+
+  </footer>
+
+
+  <!--
+    Exchange layer MUST load first.
+    app.js uses BinanceExchange.
+  -->
+
+  <script src="exchange/binance.js"></script>
+  <script src="app.js"></script>
+
+</body>
+</html>

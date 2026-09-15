@@ -671,7 +671,6 @@ async function inspectTrades() {
   }
 }
 
-
 /* =========================
    ORDER BOOK
 ========================= */
@@ -692,6 +691,716 @@ function createOrderBookTotals() {
   }
 
   const totals =
+    document.createElement("div");
+
+  totals.id =
+    "orderBookTotals";
+
+  totals.style.display = "grid";
+  totals.style.gridTemplateColumns =
+    "1fr 1fr";
+  totals.style.gap = "10px";
+  totals.style.margin =
+    "12px 0";
+
+  totals.innerHTML = `
+    <div class="metric-card">
+      <div class="metric-label">
+        Total Ask Quantity
+      </div>
+      <div id="totalAskQuantity">
+        --
+      </div>
+    </div>
+
+    <div class="metric-card">
+      <div class="metric-label">
+        Total Bid Quantity
+      </div>
+      <div id="totalBidQuantity">
+        --
+      </div>
+    </div>
+  `;
+
+  section.insertBefore(
+    totals,
+    section.firstChild
+  );
+}
+
+
+/*
+  Return the smallest meaningful
+  price increment found in the
+  exchange order-book data.
+
+  This adapts to different pairs:
+
+  BTC:
+    0.1 / 0.01 / 1
+
+  SHIB:
+    0.00000001 / 0.0000001
+
+  XRP:
+    0.0001 / 0.001
+*/
+function getBookTickSize(levels) {
+  const prices =
+    levels
+      .map(level => Number(level.price))
+      .filter(
+        price =>
+          Number.isFinite(price) &&
+          price > 0
+      )
+      .sort(
+        (a, b) =>
+          a - b
+      );
+
+  if (prices.length < 2) {
+    return 0.00000001;
+  }
+
+  let smallestDifference =
+    Infinity;
+
+  for (let i = 1; i < prices.length; i++) {
+    const difference =
+      prices[i] -
+      prices[i - 1];
+
+    if (
+      difference > 0 &&
+      difference < smallestDifference
+    ) {
+      smallestDifference =
+        difference;
+    }
+  }
+
+  return Number.isFinite(
+    smallestDifference
+  )
+    ? smallestDifference
+    : 0.00000001;
+}
+
+
+/*
+  Round a value to a safe decimal
+  precision based on its magnitude.
+*/
+function getDecimalPlaces(value) {
+  const n =
+    Math.abs(Number(value));
+
+  if (!Number.isFinite(n) || n === 0) {
+    return 8;
+  }
+
+  if (n >= 1000) return 2;
+  if (n >= 1) return 4;
+  if (n >= 0.01) return 6;
+  if (n >= 0.000001) return 8;
+  return 12;
+}
+
+
+/*
+  Create a clean price-grouping step.
+
+  The selected range is divided
+  into the requested number of
+  displayed rows.
+
+  Then the result is rounded to
+  a sensible 1/2/5/10 step.
+*/
+function getAggregationStep(
+  currentPrice,
+  rangePercent,
+  maxRows,
+  tickSize
+) {
+  const range =
+    Number(rangePercent) / 100;
+
+  const safePrice =
+    Number(currentPrice);
+
+  const safeRows =
+    Math.max(
+      1,
+      Number(maxRows) || 10
+    );
+
+  const safeTick =
+    Math.max(
+      Number(tickSize) || 0.00000001,
+      0.000000000001
+    );
+
+  const totalRange =
+    safePrice * range;
+
+  const rawStep =
+    totalRange / safeRows;
+
+  if (
+    !Number.isFinite(rawStep) ||
+    rawStep <= 0
+  ) {
+    return safeTick;
+  }
+
+  const magnitude =
+    Math.pow(
+      10,
+      Math.floor(
+        Math.log10(rawStep)
+      )
+    );
+
+  const normalized =
+    rawStep / magnitude;
+
+  let niceStep;
+
+  if (normalized <= 1) {
+    niceStep = 1;
+  } else if (normalized <= 2) {
+    niceStep = 2;
+  } else if (normalized <= 5) {
+    niceStep = 5;
+  } else {
+    niceStep = 10;
+  }
+
+  const calculatedStep =
+    niceStep * magnitude;
+
+  /*
+    Never use a grouping step
+    smaller than the exchange
+    price increment.
+  */
+  return Math.max(
+    calculatedStep,
+    safeTick
+  );
+}
+
+
+/*
+  Group raw order-book levels
+  into price buckets.
+*/
+function aggregateOrderBookLevels(
+  levels,
+  currentPrice,
+  rangePercent,
+  side,
+  maxRows
+) {
+  const range =
+    Number(rangePercent) / 100;
+
+  const safePrice =
+    Number(currentPrice);
+
+  if (
+    !Number.isFinite(safePrice) ||
+    safePrice <= 0
+  ) {
+    return {
+      rows: [],
+      step: 0,
+      lowerBound: 0,
+      upperBound: 0,
+      rawCount: 0
+    };
+  }
+
+  const tickSize =
+    getBookTickSize(levels);
+
+  const step =
+    getAggregationStep(
+      safePrice,
+      rangePercent,
+      maxRows,
+      tickSize
+    );
+
+  const lowerBound =
+    safePrice * (1 - range);
+
+  const upperBound =
+    safePrice * (1 + range);
+
+  const groups =
+    new Map();
+
+  const filtered =
+    levels.filter(level => {
+      const price =
+        Number(level.price);
+
+      if (
+        !Number.isFinite(price) ||
+        price <= 0
+      ) {
+        return false;
+      }
+
+      if (side === "asks") {
+        return (
+          price >= safePrice &&
+          price <= upperBound
+        );
+      }
+
+      return (
+        price <= safePrice &&
+        price >= lowerBound
+      );
+    });
+
+  for (const level of filtered) {
+    const price =
+      Number(level.price);
+
+    const quantity =
+      Number(level.quantity);
+
+    if (
+      !Number.isFinite(price) ||
+      !Number.isFinite(quantity) ||
+      quantity <= 0
+    ) {
+      continue;
+    }
+
+    /*
+      For asks:
+        bucket starts upward
+        from the lower range boundary.
+
+      For bids:
+        bucket starts downward
+        from the upper range boundary.
+
+      This keeps the displayed
+      price zones aligned with CMP.
+    */
+    let bucket;
+
+    if (side === "asks") {
+      bucket =
+        Math.floor(
+          (price - safePrice) /
+            step
+        ) * step +
+        safePrice;
+    } else {
+      bucket =
+        Math.ceil(
+          (price - safePrice) /
+            step
+        ) * step +
+        safePrice;
+    }
+
+    /*
+      Avoid floating-point keys
+      such as 0.000010000000001.
+    */
+    const decimals =
+      Math.min(
+        16,
+        Math.max(
+          2,
+          getDecimalPlaces(step) + 2
+        )
+      );
+
+    const key =
+      bucket.toFixed(decimals);
+
+    if (!groups.has(key)) {
+      groups.set(key, {
+        price: bucket,
+        quantity: 0,
+        value: 0,
+        rawLevels: 0
+      });
+    }
+
+    const group =
+      groups.get(key);
+
+    group.quantity += quantity;
+    group.value +=
+      price * quantity;
+    group.rawLevels++;
+  }
+
+  let rows =
+    Array.from(
+      groups.values()
+    );
+
+  if (side === "asks") {
+    rows.sort(
+      (a, b) =>
+        a.price - b.price
+    );
+  } else {
+    rows.sort(
+      (a, b) =>
+        b.price - a.price
+    );
+  }
+
+  /*
+    Keep the requested number
+    of aggregated rows.
+  */
+  rows =
+    rows.slice(
+      0,
+      Math.max(
+        1,
+        Number(maxRows) || 10
+      )
+    );
+
+  return {
+    rows,
+    step,
+    lowerBound,
+    upperBound,
+    rawCount: filtered.length
+  };
+}
+
+
+/*
+  Format the aggregation step
+  for the order-book heading.
+*/
+function formatAggregationStep(step) {
+  if (
+    !Number.isFinite(step) ||
+    step <= 0
+  ) {
+    return "--";
+  }
+
+  return formatPrice(step);
+}
+
+
+/*
+  Render one aggregated side.
+*/
+function renderOrderBookSide(
+  body,
+  levels,
+  currentPrice,
+  rangePercent,
+  side
+) {
+  body.innerHTML = "";
+
+  const maxRows =
+    Math.max(
+      1,
+      Number(
+        els.orderBookLevels.value
+      ) || 10
+    );
+
+  const result =
+    aggregateOrderBookLevels(
+      levels,
+      currentPrice,
+      rangePercent,
+      side,
+      maxRows
+    );
+
+  const rows =
+    result.rows;
+
+  if (!rows.length) {
+    body.innerHTML = `
+      <tr>
+        <td colspan="3">
+          No levels inside selected range.
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+  const fragment =
+    document.createDocumentFragment();
+
+  for (const level of rows) {
+    const row =
+      document.createElement("tr");
+
+    row.innerHTML = `
+      <td>${formatPrice(level.price)}</td>
+      <td>${formatVolume(level.quantity)}</td>
+      <td>${formatVolume(level.value)}</td>
+    `;
+
+    fragment.appendChild(row);
+  }
+
+  body.appendChild(fragment);
+}
+
+
+/*
+  Update total quantities using
+  the same aggregated rows that
+  are displayed in the table.
+*/
+function updateOrderBookTotals(
+  asks,
+  bids
+) {
+  const askTotal =
+    asks.reduce(
+      (sum, level) =>
+        sum + Number(level.quantity),
+      0
+    );
+
+  const bidTotal =
+    bids.reduce(
+      (sum, level) =>
+        sum + Number(level.quantity),
+      0
+    );
+
+  const askElement =
+    document.getElementById(
+      "totalAskQuantity"
+    );
+
+  const bidElement =
+    document.getElementById(
+      "totalBidQuantity"
+    );
+
+  if (askElement) {
+    askElement.textContent =
+      formatVolume(askTotal);
+  }
+
+  if (bidElement) {
+    bidElement.textContent =
+      formatVolume(bidTotal);
+  }
+}
+
+
+function normalizeBookLevel(level) {
+  if (Array.isArray(level)) {
+    return {
+      price: Number(level[0]),
+      quantity: Number(level[1])
+    };
+  }
+
+  return {
+    price: Number(level.price),
+    quantity: Number(
+      level.quantity ??
+      level.qty
+    )
+  };
+}
+
+
+async function loadOrderBook() {
+  els.loadOrderBookBtn.disabled = true;
+  els.loadOrderBookBtn.textContent =
+    "Loading...";
+
+  try {
+    const book =
+      await state.exchange.getOrderBook(
+        state.symbol,
+        1000
+      );
+
+    const asks =
+      (book.asks || [])
+        .map(normalizeBookLevel)
+        .filter(
+          x =>
+            Number.isFinite(x.price) &&
+            Number.isFinite(x.quantity) &&
+            x.price > 0 &&
+            x.quantity > 0
+        );
+
+    const bids =
+      (book.bids || [])
+        .map(normalizeBookLevel)
+        .filter(
+          x =>
+            Number.isFinite(x.price) &&
+            Number.isFinite(x.quantity) &&
+            x.price > 0 &&
+            x.quantity > 0
+        );
+
+    let currentPrice =
+      state.lastTradePrice;
+
+    if (!Number.isFinite(currentPrice)) {
+      currentPrice =
+        Number(
+          String(
+            els.currentPrice.textContent
+          ).replace(/,/g, "")
+        );
+    }
+
+    if (
+      !Number.isFinite(currentPrice) ||
+      currentPrice <= 0
+    ) {
+      throw new Error(
+        "Current price unavailable"
+      );
+    }
+
+    const range =
+      Number(
+        els.orderBookRange.value
+      ) || 5;
+
+    const maxRows =
+      Math.max(
+        1,
+        Number(
+          els.orderBookLevels.value
+        ) || 10
+      );
+
+    const askResult =
+      aggregateOrderBookLevels(
+        asks,
+        currentPrice,
+        range,
+        "asks",
+        maxRows
+      );
+
+    const bidResult =
+      aggregateOrderBookLevels(
+        bids,
+        currentPrice,
+        range,
+        "bids",
+        maxRows
+      );
+
+    renderOrderBookSide(
+      els.asksBody,
+      asks,
+      currentPrice,
+      range,
+      "asks"
+    );
+
+    renderOrderBookSide(
+      els.bidsBody,
+      bids,
+      currentPrice,
+      range,
+      "bids"
+    );
+
+    /*
+      Totals use the same rows
+      displayed in the tables.
+    */
+    updateOrderBookTotals(
+      askResult.rows,
+      bidResult.rows
+    );
+
+    console.log(
+      "Order book aggregation:",
+      {
+        symbol: state.symbol,
+        currentPrice,
+        rangePercent: range,
+        maxRows,
+        askAggregationStep:
+          formatAggregationStep(
+            askResult.step
+          ),
+        bidAggregationStep:
+          formatAggregationStep(
+            bidResult.step
+          ),
+        rawAskLevels:
+          askResult.rawCount,
+        rawBidLevels:
+          bidResult.rawCount,
+        displayedAskRows:
+          askResult.rows.length,
+        displayedBidRows:
+          bidResult.rows.length
+      }
+    );
+
+  } catch (error) {
+    console.error(
+      "Order book error:",
+      error
+    );
+
+    els.asksBody.innerHTML = `
+      <tr>
+        <td colspan="3">
+          Unable to load order book.
+        </td>
+      </tr>
+    `;
+
+    els.bidsBody.innerHTML = `
+      <tr>
+        <td colspan="3">
+          Unable to load order book.
+        </td>
+      </tr>
+    `;
+
+    updateOrderBookTotals(
+      [],
+      []
+    );
+
+  } finally {
+    els.loadOrderBookBtn.disabled = false;
+    els.loadOrderBookBtn.textContent =
+      "Load Order Book";
+  }
+}
     document.createElement("div");
 
   totals.id =

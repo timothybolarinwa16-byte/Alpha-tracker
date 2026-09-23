@@ -5,7 +5,7 @@
  * Binance USDⓈ-M Futures Only
  *
  * HISTORICAL INSPECTION
- * ---------------------
+ * -------------------
  * Uses Binance Futures klines rather than aggTrades.
  *
  * Default inspection timeframe:

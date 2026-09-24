@@ -1518,24 +1518,22 @@ els.loadOrderBookBtn
 ========================================================= */
 
 /*
- * Temporal Density
+ * TEMPORAL DENSITY
  *
- * Amount of activity occurring per unit of time.
+ * Activity per unit of elapsed time.
  *
  * TD = volume / elapsed time
  *
  * TD is always >= 0.
  */
 
-const TEMPORAL_SPIKE_THRESHOLD = 2.0;
-
 
 /*
- * Calculate the duration represented by
- * each observation.
+ * Get the actual elapsed time represented
+ * by an observation.
  *
- * We use the actual timestamps rather than
- * candle indexes so the metric remains temporal.
+ * We deliberately use timestamps rather
+ * than candle indexes.
  */
 
 function getTemporalInterval(
@@ -1567,8 +1565,7 @@ function getTemporalInterval(
 
 
 /*
- * Calculate the temporal-density observations
- * for one activity field.
+ * Calculate TD for every observation.
  */
 
 function calculateTemporalDensity(
@@ -1597,13 +1594,16 @@ function calculateTemporalDensity(
     const volume =
       Math.max(
         0,
-        Number(series[i][field]) || 0
+        Number(
+          series[i][field]
+        ) || 0
       );
 
     const density =
       volume / interval;
 
     observations.push({
+
       time:
         Number(series[i].time),
 
@@ -1624,10 +1624,8 @@ function calculateTemporalDensity(
  *
  * Temporal Density Average.
  *
- * We use total activity divided by
- * total elapsed time. This makes the
- * baseline genuinely temporal rather
- * than candle-count dependent.
+ * Total activity divided by total
+ * elapsed time.
  */
 
 function calculateTDA(
@@ -1664,42 +1662,13 @@ function calculateTDA(
  *
  * Temporal Density Ratio.
  *
- * Current temporal density relative
- * to its temporal-density average.
+ * This is calculated for EVERY
+ * observation.
+ *
+ * TDR = TD / TDA
  */
 
-function calculateTDR(
-  density,
-  tda
-) {
-
-  if (
-    !Number.isFinite(density) ||
-    !Number.isFinite(tda) ||
-    tda <= 0
-  ) {
-    return 0;
-  }
-
-  return density / tda;
-}
-
-
-/*
- * SC
- *
- * Spike Count.
- *
- * A spike is counted only when the
- * density crosses from below the
- * threshold to above it.
- *
- * Therefore a sustained high-density
- * region counts as ONE spike,
- * not many spikes.
- */
-
-function calculateSpikeCount(
+function calculateTDRSeries(
   observations,
   tda
 ) {
@@ -1708,52 +1677,83 @@ function calculateSpikeCount(
     !observations.length ||
     tda <= 0
   ) {
+    return [];
+  }
+
+  return observations.map(
+    observation => ({
+
+      time:
+        observation.time,
+
+      density:
+        observation.density,
+
+      tdr:
+        observation.density /
+        tda
+    })
+  );
+}
+
+
+/*
+ * SC
+ *
+ * Spike Count.
+ *
+ * IMPORTANT:
+ *
+ * SC is NOT the number of distinct
+ * spike episodes.
+ *
+ * Every observation whose TDR is
+ * above 1 counts.
+ *
+ * Example:
+ *
+ * TDR:
+ * 0.8
+ * 1.2  <- SC +1
+ * 1.8  <- SC +1
+ * 2.1  <- SC +1
+ * 0.9
+ *
+ * SC = 3
+ */
+
+function calculateSpikeCount(
+  tdrSeries
+) {
+
+  if (!tdrSeries.length) {
     return 0;
   }
 
-  let spikeCount = 0;
-  let insideSpike = false;
+  return tdrSeries.reduce(
+    (
+      count,
+      observation
+    ) => {
 
-  for (
-    const observation
-    of observations
-  ) {
+      return count +
+        (
+          observation.tdr > 1
+            ? 1
+            : 0
+        );
 
-    const ratio =
-      calculateTDR(
-        observation.density,
-        tda
-      );
-
-    const isSpike =
-      ratio >=
-      TEMPORAL_SPIKE_THRESHOLD;
-
-    if (
-      isSpike &&
-      !insideSpike
-    ) {
-
-      spikeCount++;
-      insideSpike = true;
-
-    } else if (
-      !isSpike
-    ) {
-
-      insideSpike = false;
-    }
-  }
-
-  return spikeCount;
+    },
+    0
+  );
 }
 
 
 /*
  * Spike Frequency
  *
- * Number of distinct spikes
- * per hour of observed time.
+ * Number of above-average
+ * observations per hour.
  */
 
 function calculateSpikeFrequency(
@@ -1789,7 +1789,8 @@ function calculateSpikeFrequency(
 
 
 /*
- * Complete metric set for one side.
+ * Build the complete temporal
+ * metric structure for one side.
  */
 
 function buildTemporalMetrics(
@@ -1808,23 +1809,15 @@ function buildTemporalMetrics(
       observations
     );
 
-  const last =
-    observations[
-      observations.length - 1
-    ];
-
-  const tdr =
-    last
-      ? calculateTDR(
-          last.density,
-          tda
-        )
-      : 0;
+  const tdrSeries =
+    calculateTDRSeries(
+      observations,
+      tda
+    );
 
   const sc =
     calculateSpikeCount(
-      observations,
-      tda
+      tdrSeries
     );
 
   const sf =
@@ -1833,22 +1826,35 @@ function buildTemporalMetrics(
       observations
     );
 
+  const latest =
+    tdrSeries.length
+      ? tdrSeries[
+          tdrSeries.length - 1
+        ].tdr
+      : 0;
+
   return {
+
     field,
+
     tda,
-    tdr,
+
+    latestTDR:
+      latest,
+
     sc,
+
     sf,
-    observations
+
+    observations,
+
+    tdrSeries
   };
 }
 
 
 /*
- * Render the independent metric set.
- *
- * Buy Taker and Sell Taker remain
- * completely separate.
+ * Main temporal metric update.
  */
 
 function updateTemporalMetrics(
@@ -1862,18 +1868,15 @@ function updateTemporalMetrics(
     return;
   }
 
+
   /*
-   * In the current Futures kline model:
+   * Build Buy Taker and Sell Taker.
    *
-   * buyTaker =
-   *     taker-buy volume
+   * Buy Taker comes directly from
+   * the Futures kline data.
    *
-   * sellTaker =
-   *     total volume - taker-buy volume
-   *
-   * We calculate sell-taker directly from
-   * total volume rather than changing the
-   * existing buyMaker field.
+   * Sell Taker =
+   * total volume - Buy Taker.
    */
 
   const normalized =
@@ -1883,13 +1886,17 @@ function updateTemporalMetrics(
         const volume =
           Math.max(
             0,
-            Number(candle.volume) || 0
+            Number(
+              candle.volume
+            ) || 0
           );
 
         const buyTaker =
           Math.max(
             0,
-            Number(candle.buyTaker) || 0
+            Number(
+              candle.buyTaker
+            ) || 0
           );
 
         const sellTaker =
@@ -1899,13 +1906,23 @@ function updateTemporalMetrics(
           );
 
         return {
+
           ...candle,
+
           volume,
+
           buyTaker,
+
           sellTaker
         };
       }
     );
+
+
+  /*
+   * Completely independent
+   * calculations.
+   */
 
   const buy =
     buildTemporalMetrics(
@@ -1919,24 +1936,39 @@ function updateTemporalMetrics(
       "sellTaker"
     );
 
+
+  /*
+   * Render metric cards.
+   */
+
   renderTemporalMetrics(
     buy,
     sell
   );
 
+
   /*
-   * Expose the latest calculation for
-   * inspection/debugging without affecting
-   * the existing application state.
+   * Render TDR histogram.
+   */
+
+  renderTDRHistogram(
+    buy,
+    sell
+  );
+
+
+  /*
+   * Keep the full metric structures
+   * available for inspection.
    */
 
   window.AlphaTracker.temporalMetrics = {
-    threshold:
-      TEMPORAL_SPIKE_THRESHOLD,
 
     buyTaker: buy,
+
     sellTaker: sell
   };
+
 
   console.log(
     "Temporal Density Metrics:",
@@ -1945,12 +1977,9 @@ function updateTemporalMetrics(
 }
 
 
-/*
- * Display panel.
- *
- * Created dynamically so we don't have
- * to modify index.html yet.
- */
+/* =========================================================
+   TEMPORAL METRIC CARDS
+========================================================= */
 
 function renderTemporalMetrics(
   buy,
@@ -1970,6 +1999,7 @@ function renderTemporalMetrics(
     document.getElementById(
       "temporalMetrics"
     );
+
 
   if (!panel) {
 
@@ -1999,6 +2029,7 @@ function renderTemporalMetrics(
     );
   }
 
+
   panel.innerHTML = `
 
     <div class="metric-card">
@@ -2017,7 +2048,7 @@ function renderTemporalMetrics(
       <div style="margin-top:5px">
         TDR:
         <strong>
-          ${buy.tdr.toFixed(2)}×
+          ${buy.latestTDR.toFixed(2)}×
         </strong>
       </div>
 
@@ -2054,7 +2085,7 @@ function renderTemporalMetrics(
       <div style="margin-top:5px">
         TDR:
         <strong>
-          ${sell.tdr.toFixed(2)}×
+          ${sell.latestTDR.toFixed(2)}×
         </strong>
       </div>
 
@@ -2082,11 +2113,674 @@ function renderTemporalMetrics(
         padding:4px 2px;
       "
     >
-      Spike threshold:
-      ${TEMPORAL_SPIKE_THRESHOLD.toFixed(1)}× TDA
+      SC = number of observations
+      where TDR &gt; 1
     </div>
 
   `;
+}
+
+
+/* =========================================================
+   TDR HISTOGRAM
+========================================================= */
+
+function renderTDRHistogram(
+  buy,
+  sell
+) {
+
+  const chart =
+    document.getElementById(
+      "tradeFlowChart"
+    );
+
+  if (!chart) {
+    return;
+  }
+
+
+  let container =
+    document.getElementById(
+      "tdrHistogram"
+    );
+
+
+  if (!container) {
+
+    container =
+      document.createElement(
+        "div"
+      );
+
+    container.id =
+      "tdrHistogram";
+
+    container.style.width =
+      "100%";
+
+    container.style.height =
+      "220px";
+
+    container.style.marginTop =
+      "12px";
+
+    container.style.position =
+      "relative";
+
+    container.style.overflow =
+      "hidden";
+
+
+    /*
+     * Put histogram immediately
+     * below the flow chart.
+     */
+
+    chart.parentElement.insertBefore(
+      container,
+      chart.nextSibling
+    );
+  }
+
+
+  container.innerHTML = "";
+
+
+  const canvas =
+    document.createElement(
+      "canvas"
+    );
+
+  canvas.style.display =
+    "block";
+
+  canvas.style.width =
+    "100%";
+
+  canvas.style.height =
+    "100%";
+
+  container.appendChild(
+    canvas
+  );
+
+
+  const rect =
+    container.getBoundingClientRect();
+
+  const width =
+    Math.max(
+      320,
+      Math.floor(
+        rect.width
+      )
+    );
+
+  const height =
+    Math.max(
+      180,
+      Math.floor(
+        rect.height
+      )
+    );
+
+  const dpr =
+    Math.max(
+      1,
+      window.devicePixelRatio || 1
+    );
+
+  canvas.width =
+    Math.floor(
+      width * dpr
+    );
+
+  canvas.height =
+    Math.floor(
+      height * dpr
+    );
+
+  canvas.style.width =
+    `${width}px`;
+
+  canvas.style.height =
+    `${height}px`;
+
+
+  const ctx =
+    canvas.getContext(
+      "2d"
+    );
+
+  ctx.setTransform(
+    dpr,
+    0,
+    0,
+    dpr,
+    0,
+    0
+  );
+
+
+  /*
+   * We need both series to share
+   * the same temporal positions.
+   */
+
+  const buySeries =
+    buy.tdrSeries || [];
+
+  const sellSeries =
+    sell.tdrSeries || [];
+
+
+  if (
+    !buySeries.length &&
+    !sellSeries.length
+  ) {
+    return;
+  }
+
+
+  /*
+   * Use the union of the available
+   * timestamps.
+   */
+
+  const times = [
+    ...new Set([
+      ...buySeries.map(
+        item => item.time
+      ),
+      ...sellSeries.map(
+        item => item.time
+      )
+    ])
+  ].sort(
+    (a, b) => a - b
+  );
+
+
+  if (!times.length) {
+    return;
+  }
+
+
+  /*
+   * Create quick lookup maps.
+   */
+
+  const buyMap =
+    new Map(
+      buySeries.map(
+        item => [
+          item.time,
+          item.tdr
+        ]
+      )
+    );
+
+  const sellMap =
+    new Map(
+      sellSeries.map(
+        item => [
+          item.time,
+          item.tdr
+        ]
+      )
+    );
+
+
+  const left = 42;
+  const right = 12;
+  const top = 28;
+  const bottom = 26;
+
+  const plotWidth =
+    width -
+    left -
+    right;
+
+  const plotHeight =
+    height -
+    top -
+    bottom;
+
+
+  /*
+   * Find maximum TDR.
+   */
+
+  let maxTDR = 1;
+
+  for (
+    const time
+    of times
+  ) {
+
+    const buyValue =
+      Number(
+        buyMap.get(time)
+      ) || 0;
+
+    const sellValue =
+      Number(
+        sellMap.get(time)
+      ) || 0;
+
+    maxTDR =
+      Math.max(
+        maxTDR,
+        buyValue,
+        sellValue
+      );
+  }
+
+
+  /*
+   * Give the histogram some
+   * headroom.
+   */
+
+  maxTDR *= 1.12;
+
+
+  /*
+   * Header.
+   */
+
+  ctx.font =
+    "bold 12px sans-serif";
+
+  ctx.fillStyle =
+    "rgba(255,255,255,.9)";
+
+  ctx.fillText(
+    "Temporal Density Ratio",
+    left,
+    15
+  );
+
+
+  ctx.font =
+    "10px sans-serif";
+
+  ctx.fillStyle =
+    "rgba(128,128,128,.8)";
+
+  ctx.fillText(
+    "Buy Taker / Sell Taker • baseline = 1× TDA",
+    left + 145,
+    15
+  );
+
+
+  /*
+   * Grid.
+   */
+
+  ctx.strokeStyle =
+    "rgba(128,128,128,.15)";
+
+  ctx.lineWidth = 1;
+
+  const gridRows = 4;
+
+  for (
+    let i = 0;
+    i <= gridRows;
+    i++
+  ) {
+
+    const ratio =
+      i / gridRows;
+
+    const y =
+      top +
+      ratio *
+      plotHeight;
+
+    ctx.beginPath();
+
+    ctx.moveTo(
+      left,
+      y
+    );
+
+    ctx.lineTo(
+      width - right,
+      y
+    );
+
+    ctx.stroke();
+  }
+
+
+  /*
+   * TDA baseline.
+   *
+   * TDR = 1 means TD = TDA.
+   */
+
+  const baselineY =
+    top +
+    (
+      1 -
+      1 / maxTDR
+    ) *
+    plotHeight;
+
+  ctx.strokeStyle =
+    "rgba(255,220,100,.85)";
+
+  ctx.setLineDash([
+    5,
+    4
+  ]);
+
+  ctx.beginPath();
+
+  ctx.moveTo(
+    left,
+    baselineY
+  );
+
+  ctx.lineTo(
+    width - right,
+    baselineY
+  );
+
+  ctx.stroke();
+
+  ctx.setLineDash([]);
+
+
+  ctx.fillStyle =
+    "rgba(255,220,100,.9)";
+
+  ctx.font =
+    "10px sans-serif";
+
+  ctx.fillText(
+    "1×",
+    8,
+    baselineY + 3
+  );
+
+
+  /*
+   * Bar width.
+   */
+
+  const barWidth =
+    Math.max(
+      1,
+      plotWidth /
+        times.length *
+        0.72
+    );
+
+
+  /*
+   * Draw the two TDR series.
+   *
+   * Buy Taker is drawn from the
+   * baseline downward toward zero.
+   *
+   * Sell Taker is drawn from the
+   * baseline upward.
+   *
+   * This keeps both distributions
+   * visually separate.
+   */
+
+  for (
+    let i = 0;
+    i < times.length;
+    i++
+  ) {
+
+    const time =
+      times[i];
+
+    const x =
+      left +
+      (
+        i /
+        Math.max(
+          1,
+          times.length - 1
+        )
+      ) *
+      plotWidth;
+
+
+    const buyValue =
+      Number(
+        buyMap.get(time)
+      ) || 0;
+
+    const sellValue =
+      Number(
+        sellMap.get(time)
+      ) || 0;
+
+
+    /*
+     * BUY TAKER
+     */
+
+    const buyY =
+      top +
+      (
+        1 -
+        Math.min(
+          buyValue,
+          maxTDR
+        ) /
+        maxTDR
+      ) *
+      plotHeight;
+
+    ctx.fillStyle =
+      "rgba(53,208,127,.78)";
+
+    ctx.fillRect(
+      x -
+      barWidth / 2,
+      buyY,
+      barWidth,
+      Math.max(
+        1,
+        baselineY -
+        buyY
+      )
+    );
+
+
+    /*
+     * SELL TAKER
+     */
+
+    const sellY =
+      top +
+      (
+        1 -
+        Math.min(
+          sellValue,
+          maxTDR
+        ) /
+        maxTDR
+      ) *
+      plotHeight;
+
+    ctx.fillStyle =
+      "rgba(255,107,107,.78)";
+
+    ctx.fillRect(
+      x -
+      barWidth / 2,
+      sellY,
+      barWidth,
+      Math.max(
+        1,
+        baselineY -
+        sellY
+      )
+    );
+  }
+
+
+  /*
+   * Y-axis labels.
+   */
+
+  ctx.fillStyle =
+    "rgba(128,128,128,.8)";
+
+  ctx.font =
+    "10px sans-serif";
+
+  for (
+    let i = 0;
+    i <= gridRows;
+    i++
+  ) {
+
+    const value =
+      maxTDR *
+      (
+        1 -
+        i / gridRows
+      );
+
+    const y =
+      top +
+      (
+        i /
+        gridRows
+      ) *
+      plotHeight;
+
+    ctx.fillText(
+      `${value.toFixed(1)}×`,
+      4,
+      y + 3
+    );
+  }
+
+
+  /*
+   * Time labels.
+   */
+
+  const labelCount =
+    Math.min(
+      5,
+      times.length
+    );
+
+  for (
+    let i = 0;
+    i < labelCount;
+    i++
+  ) {
+
+    const index =
+      labelCount === 1
+        ? 0
+        : Math.floor(
+            i *
+            (
+              times.length - 1
+            ) /
+            (
+              labelCount - 1
+            )
+          );
+
+    const time =
+      times[index];
+
+    const x =
+      left +
+      (
+        index /
+        Math.max(
+          1,
+          times.length - 1
+        )
+      ) *
+      plotWidth;
+
+    const date =
+      new Date(time);
+
+    const label =
+      `${String(
+        date.getMonth() + 1
+      ).padStart(2, "0")}/` +
+      `${String(
+        date.getDate()
+      ).padStart(2, "0")} ` +
+      `${String(
+        date.getHours()
+      ).padStart(2, "0")}:` +
+      `${String(
+        date.getMinutes()
+      ).padStart(2, "0")}`;
+
+    ctx.fillText(
+      label,
+      x - 22,
+      height - 7
+    );
+  }
+
+
+  /*
+   * Legend.
+   */
+
+  ctx.fillStyle =
+    "#35d07f";
+
+  ctx.fillRect(
+    width - 170,
+    8,
+    8,
+    8
+  );
+
+  ctx.fillStyle =
+    "rgba(255,255,255,.8)";
+
+  ctx.fillText(
+    "Buy Taker",
+    width - 157,
+    16
+  );
+
+
+  ctx.fillStyle =
+    "#ff6b6b";
+
+  ctx.fillRect(
+    width - 90,
+    8,
+    8,
+    8
+  );
+
+  ctx.fillStyle =
+    "rgba(255,255,255,.8)";
+
+  ctx.fillText(
+    "Sell Taker",
+    width - 77,
+    16
+  );
 }
 
 /* =========================================================

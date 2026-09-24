@@ -707,7 +707,7 @@ async function inspectTrades() {
     renderTradeFlowChart(
       series
     );
-
+updateTemporalMetrics(series);
   } catch (error) {
 
     console.error(

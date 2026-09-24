@@ -1513,7 +1513,581 @@ els.loadOrderBookBtn
     "click",
     loadOrderBook
   );
+/* =========================================================
+   TEMPORAL DENSITY METRICS
+========================================================= */
 
+/*
+ * Temporal Density
+ *
+ * Amount of activity occurring per unit of time.
+ *
+ * TD = volume / elapsed time
+ *
+ * TD is always >= 0.
+ */
+
+const TEMPORAL_SPIKE_THRESHOLD = 2.0;
+
+
+/*
+ * Calculate the duration represented by
+ * each observation.
+ *
+ * We use the actual timestamps rather than
+ * candle indexes so the metric remains temporal.
+ */
+
+function getTemporalInterval(
+  series,
+  index
+) {
+
+  if (
+    index <= 0 ||
+    !series[index - 1] ||
+    !series[index]
+  ) {
+    return 0;
+  }
+
+  const current =
+    Number(series[index].time);
+
+  const previous =
+    Number(series[index - 1].time);
+
+  const delta =
+    current - previous;
+
+  return delta > 0
+    ? delta / 1000
+    : 0;
+}
+
+
+/*
+ * Calculate the temporal-density observations
+ * for one activity field.
+ */
+
+function calculateTemporalDensity(
+  series,
+  field
+) {
+
+  const observations = [];
+
+  for (
+    let i = 1;
+    i < series.length;
+    i++
+  ) {
+
+    const interval =
+      getTemporalInterval(
+        series,
+        i
+      );
+
+    if (interval <= 0) {
+      continue;
+    }
+
+    const volume =
+      Math.max(
+        0,
+        Number(series[i][field]) || 0
+      );
+
+    const density =
+      volume / interval;
+
+    observations.push({
+      time:
+        Number(series[i].time),
+
+      volume,
+
+      interval,
+
+      density
+    });
+  }
+
+  return observations;
+}
+
+
+/*
+ * TDA
+ *
+ * Temporal Density Average.
+ *
+ * We use total activity divided by
+ * total elapsed time. This makes the
+ * baseline genuinely temporal rather
+ * than candle-count dependent.
+ */
+
+function calculateTDA(
+  observations
+) {
+
+  if (!observations.length) {
+    return 0;
+  }
+
+  let totalVolume = 0;
+  let totalTime = 0;
+
+  for (
+    const observation
+    of observations
+  ) {
+
+    totalVolume +=
+      observation.volume;
+
+    totalTime +=
+      observation.interval;
+  }
+
+  return totalTime > 0
+    ? totalVolume / totalTime
+    : 0;
+}
+
+
+/*
+ * TDR
+ *
+ * Temporal Density Ratio.
+ *
+ * Current temporal density relative
+ * to its temporal-density average.
+ */
+
+function calculateTDR(
+  density,
+  tda
+) {
+
+  if (
+    !Number.isFinite(density) ||
+    !Number.isFinite(tda) ||
+    tda <= 0
+  ) {
+    return 0;
+  }
+
+  return density / tda;
+}
+
+
+/*
+ * SC
+ *
+ * Spike Count.
+ *
+ * A spike is counted only when the
+ * density crosses from below the
+ * threshold to above it.
+ *
+ * Therefore a sustained high-density
+ * region counts as ONE spike,
+ * not many spikes.
+ */
+
+function calculateSpikeCount(
+  observations,
+  tda
+) {
+
+  if (
+    !observations.length ||
+    tda <= 0
+  ) {
+    return 0;
+  }
+
+  let spikeCount = 0;
+  let insideSpike = false;
+
+  for (
+    const observation
+    of observations
+  ) {
+
+    const ratio =
+      calculateTDR(
+        observation.density,
+        tda
+      );
+
+    const isSpike =
+      ratio >=
+      TEMPORAL_SPIKE_THRESHOLD;
+
+    if (
+      isSpike &&
+      !insideSpike
+    ) {
+
+      spikeCount++;
+      insideSpike = true;
+
+    } else if (
+      !isSpike
+    ) {
+
+      insideSpike = false;
+    }
+  }
+
+  return spikeCount;
+}
+
+
+/*
+ * Spike Frequency
+ *
+ * Number of distinct spikes
+ * per hour of observed time.
+ */
+
+function calculateSpikeFrequency(
+  spikeCount,
+  observations
+) {
+
+  if (
+    !observations.length ||
+    spikeCount <= 0
+  ) {
+    return 0;
+  }
+
+  const totalSeconds =
+    observations.reduce(
+      (
+        total,
+        observation
+      ) =>
+        total +
+        observation.interval,
+      0
+    );
+
+  const hours =
+    totalSeconds / 3600;
+
+  return hours > 0
+    ? spikeCount / hours
+    : 0;
+}
+
+
+/*
+ * Complete metric set for one side.
+ */
+
+function buildTemporalMetrics(
+  series,
+  field
+) {
+
+  const observations =
+    calculateTemporalDensity(
+      series,
+      field
+    );
+
+  const tda =
+    calculateTDA(
+      observations
+    );
+
+  const last =
+    observations[
+      observations.length - 1
+    ];
+
+  const tdr =
+    last
+      ? calculateTDR(
+          last.density,
+          tda
+        )
+      : 0;
+
+  const sc =
+    calculateSpikeCount(
+      observations,
+      tda
+    );
+
+  const sf =
+    calculateSpikeFrequency(
+      sc,
+      observations
+    );
+
+  return {
+    field,
+    tda,
+    tdr,
+    sc,
+    sf,
+    observations
+  };
+}
+
+
+/*
+ * Render the independent metric set.
+ *
+ * Buy Taker and Sell Taker remain
+ * completely separate.
+ */
+
+function updateTemporalMetrics(
+  series
+) {
+
+  if (
+    !Array.isArray(series) ||
+    series.length < 2
+  ) {
+    return;
+  }
+
+  /*
+   * In the current Futures kline model:
+   *
+   * buyTaker =
+   *     taker-buy volume
+   *
+   * sellTaker =
+   *     total volume - taker-buy volume
+   *
+   * We calculate sell-taker directly from
+   * total volume rather than changing the
+   * existing buyMaker field.
+   */
+
+  const normalized =
+    series.map(
+      candle => {
+
+        const volume =
+          Math.max(
+            0,
+            Number(candle.volume) || 0
+          );
+
+        const buyTaker =
+          Math.max(
+            0,
+            Number(candle.buyTaker) || 0
+          );
+
+        const sellTaker =
+          Math.max(
+            0,
+            volume - buyTaker
+          );
+
+        return {
+          ...candle,
+          volume,
+          buyTaker,
+          sellTaker
+        };
+      }
+    );
+
+  const buy =
+    buildTemporalMetrics(
+      normalized,
+      "buyTaker"
+    );
+
+  const sell =
+    buildTemporalMetrics(
+      normalized,
+      "sellTaker"
+    );
+
+  renderTemporalMetrics(
+    buy,
+    sell
+  );
+
+  /*
+   * Expose the latest calculation for
+   * inspection/debugging without affecting
+   * the existing application state.
+   */
+
+  window.AlphaTracker.temporalMetrics = {
+    threshold:
+      TEMPORAL_SPIKE_THRESHOLD,
+
+    buyTaker: buy,
+    sellTaker: sell
+  };
+
+  console.log(
+    "Temporal Density Metrics:",
+    window.AlphaTracker.temporalMetrics
+  );
+}
+
+
+/*
+ * Display panel.
+ *
+ * Created dynamically so we don't have
+ * to modify index.html yet.
+ */
+
+function renderTemporalMetrics(
+  buy,
+  sell
+) {
+
+  const chart =
+    document.getElementById(
+      "tradeFlowChart"
+    );
+
+  if (!chart) {
+    return;
+  }
+
+  let panel =
+    document.getElementById(
+      "temporalMetrics"
+    );
+
+  if (!panel) {
+
+    panel =
+      document.createElement(
+        "div"
+      );
+
+    panel.id =
+      "temporalMetrics";
+
+    panel.style.marginTop =
+      "12px";
+
+    panel.style.display =
+      "grid";
+
+    panel.style.gridTemplateColumns =
+      "1fr 1fr";
+
+    panel.style.gap =
+      "10px";
+
+    chart.parentElement.insertBefore(
+      panel,
+      chart.nextSibling
+    );
+  }
+
+  panel.innerHTML = `
+
+    <div class="metric-card">
+
+      <div class="metric-label">
+        BUY TAKER
+      </div>
+
+      <div style="margin-top:8px">
+        TDA:
+        <strong>
+          ${formatVolume(buy.tda)}/s
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        TDR:
+        <strong>
+          ${buy.tdr.toFixed(2)}×
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        SC:
+        <strong>
+          ${buy.sc}
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        Spike Frequency:
+        <strong>
+          ${buy.sf.toFixed(2)}/hr
+        </strong>
+      </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+      <div class="metric-label">
+        SELL TAKER
+      </div>
+
+      <div style="margin-top:8px">
+        TDA:
+        <strong>
+          ${formatVolume(sell.tda)}/s
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        TDR:
+        <strong>
+          ${sell.tdr.toFixed(2)}×
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        SC:
+        <strong>
+          ${sell.sc}
+        </strong>
+      </div>
+
+      <div style="margin-top:5px">
+        Spike Frequency:
+        <strong>
+          ${sell.sf.toFixed(2)}/hr
+        </strong>
+      </div>
+
+    </div>
+
+    <div
+      style="
+        grid-column:1/-1;
+        font-size:11px;
+        opacity:.65;
+        padding:4px 2px;
+      "
+    >
+      Spike threshold:
+      ${TEMPORAL_SPIKE_THRESHOLD.toFixed(1)}× TDA
+    </div>
+
+  `;
+}
 
 /* =========================================================
    INITIALIZE

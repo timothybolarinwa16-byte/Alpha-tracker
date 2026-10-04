@@ -1956,7 +1956,10 @@ function updateTemporalMetrics(
     sell
   );
 
-
+renderPairedTDRDominance(
+  buy,
+  sell
+);
   /*
    * Keep the full metric structures
    * available for inspection.

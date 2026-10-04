@@ -2782,7 +2782,307 @@ function renderTDRHistogram(
     16
   );
 }
+/* =========================================================
+   PAIRED TDR DOMINANCE
+========================================================= */
 
+/*
+ * Build the independent above-baseline
+ * event streams.
+ *
+ * Event #1 is the first TDR > 1 event.
+ * Event #2 is the second TDR > 1 event.
+ * etc.
+ *
+ * Timing does NOT determine pairing.
+ * Ordinal position does.
+ */
+
+function getAboveBaselineEvents(
+  tdrSeries
+) {
+
+  if (!Array.isArray(tdrSeries)) {
+    return [];
+  }
+
+  return tdrSeries
+    .filter(
+      observation =>
+        Number(observation.tdr) > 1
+    )
+    .map(
+      (
+        observation,
+        index
+      ) => ({
+
+        eventNumber:
+          index + 1,
+
+        time:
+          observation.time,
+
+        tdr:
+          observation.tdr
+      })
+    );
+}
+
+
+/*
+ * Pair Buy event #N with Sell event #N.
+ *
+ * The timestamps do not need to match.
+ *
+ * Example:
+ *
+ * Buy #3 at 05:00
+ * Sell #3 at 06:00
+ *
+ * They still form pair #3.
+ */
+
+function buildPairedTDREvents(
+  buy,
+  sell
+) {
+
+  const buyEvents =
+    getAboveBaselineEvents(
+      buy.tdrSeries
+    );
+
+  const sellEvents =
+    getAboveBaselineEvents(
+      sell.tdrSeries
+    );
+
+  const pairCount =
+    Math.min(
+      buyEvents.length,
+      sellEvents.length
+    );
+
+  const pairs = [];
+
+  let buyWins = 0;
+  let sellWins = 0;
+  let ties = 0;
+
+  for (
+    let i = 0;
+    i < pairCount;
+    i++
+  ) {
+
+    const buyEvent =
+      buyEvents[i];
+
+    const sellEvent =
+      sellEvents[i];
+
+    let winner =
+      "tie";
+
+    if (
+      buyEvent.tdr >
+      sellEvent.tdr
+    ) {
+
+      winner =
+        "buy";
+
+      buyWins++;
+
+    } else if (
+      sellEvent.tdr >
+      buyEvent.tdr
+    ) {
+
+      winner =
+        "sell";
+
+      sellWins++;
+
+    } else {
+
+      ties++;
+    }
+
+    pairs.push({
+
+      eventNumber:
+        i + 1,
+
+      buyTDR:
+        buyEvent.tdr,
+
+      sellTDR:
+        sellEvent.tdr,
+
+      buyTime:
+        buyEvent.time,
+
+      sellTime:
+        sellEvent.time,
+
+      winner
+    });
+  }
+
+  return {
+
+    buyEvents,
+
+    sellEvents,
+
+    pairs,
+
+    buyWins,
+
+    sellWins,
+
+    ties
+  };
+}
+
+
+/*
+ * Render the paired dominance result.
+ *
+ * This remains independent from:
+ *
+ * TDA
+ * TDR
+ * SC
+ * SF
+ *
+ * It is only comparing the ordinal
+ * above-baseline TDR events.
+ */
+
+function renderPairedTDRDominance(
+  buy,
+  sell
+) {
+
+  const chart =
+    document.getElementById(
+      "tradeFlowChart"
+    );
+
+  if (!chart) {
+    return;
+  }
+
+  const result =
+    buildPairedTDREvents(
+      buy,
+      sell
+    );
+
+  let panel =
+    document.getElementById(
+      "pairedTDRDominance"
+    );
+
+  if (!panel) {
+
+    panel =
+      document.createElement(
+        "div"
+      );
+
+    panel.id =
+      "pairedTDRDominance";
+
+    panel.style.marginTop =
+      "12px";
+
+    panel.style.display =
+      "grid";
+
+    panel.style.gridTemplateColumns =
+      "1fr 1fr 1fr";
+
+    panel.style.gap =
+      "10px";
+
+    chart.parentElement.insertBefore(
+      panel,
+      chart.nextSibling
+    );
+  }
+
+  panel.innerHTML = `
+
+    <div class="metric-card">
+
+      <div class="metric-label">
+        BUY PAIRED DOMINANCE
+      </div>
+
+      <div style="margin-top:8px">
+        ${result.buyWins}
+      </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+      <div class="metric-label">
+        SELL PAIRED DOMINANCE
+      </div>
+
+      <div style="margin-top:8px">
+        ${result.sellWins}
+      </div>
+
+    </div>
+
+
+    <div class="metric-card">
+
+      <div class="metric-label">
+        TIES
+      </div>
+
+      <div style="margin-top:8px">
+        ${result.ties}
+      </div>
+
+    </div>
+
+    <div
+      style="
+        grid-column:1/-1;
+        font-size:11px;
+        opacity:.65;
+        padding:4px 2px;
+      "
+    >
+      Paired by ordinal TDR &gt; 1 event.
+      Event timing does not determine pairing.
+    </div>
+
+  `;
+
+
+  /*
+   * Keep the complete result accessible
+   * for testing.
+   */
+
+  window.AlphaTracker.pairedTDRDominance =
+    result;
+
+  console.log(
+    "Paired TDR Dominance:",
+    result
+  );
+}
 /* =========================================================
    INITIALIZE
 ========================================================= */

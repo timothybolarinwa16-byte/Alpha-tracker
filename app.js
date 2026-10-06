@@ -990,16 +990,20 @@ async function loadPair() {
       await resolveSymbol(
         requested
       );
+state.symbol = resolved;
 
-    state.symbol = resolved;
+elements.pairInput.value =
+  resolved;
 
-    elements.pairInput.value =
-      resolved;
+if (document.getElementById("marketPair")) {
+  document.getElementById("marketPair").textContent =
+    resolved;
+}
 
-    setStatus(
-      `${resolved} connected`,
-      "positive"
-    );
+setStatus(
+  `${resolved} connected`,
+  "positive"
+);
 
     startTicker();
 

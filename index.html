@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, maximum-scale=1.0"
+  >
+
+  <title>Alpha Tracker</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <!-- =====================================================
+       TOP BAR
+  ====================================================== -->
+
+  <header class="topbar">
+
+    <div class="brand">
+
+      <h1>Alpha Tracker</h1>
+
+      <span id="connectionStatus">
+        Ready
+      </span>
+
+    </div>
+
+
+    <div class="pair-control">
+
+      <label for="pairInput">
+        Pair
+      </label>
+
+      <input
+        id="pairInput"
+        type="text"
+        value="BTCUSDT"
+        autocomplete="off"
+        spellcheck="false"
+      >
+
+      <button id="loadPairBtn">
+        Load
+      </button>
+
+    </div>
+
+  </header>
+
+
+  <!-- =====================================================
+       MAIN APPLICATION
+  ====================================================== -->
+
+  <main class="app">
+
+
+    <!-- ===================================================
+         MARKET
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>Market</h2>
+
+          <p class="panel-description">
+            Binance USDⓈ-M Futures
+          </p>
+
+        </div>
+
+        <span id="marketPair">
+          BTCUSDT
+        </span>
+
+      </div>
+
+
+      <div class="market-grid">
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Price
+          </span>
+
+          <strong id="currentPrice">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            24h Change
+          </span>
+
+          <strong id="priceChange">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            24h Volume
+          </span>
+
+          <strong id="volume24h">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Trades
+          </span>
+
+          <strong id="tradeCount">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         HISTORICAL INSPECTION
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Historical Analysis
+          </h2>
+
+          <p class="panel-description">
+            Calculate temporal, spatial and participation
+            metrics across the selected Futures window.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="controls">
+
+        <div class="control">
+
+          <label for="tradeStart">
+            Start
+          </label>
+
+          <input
+            id="tradeStart"
+            type="datetime-local"
+          >
+
+        </div>
+
+
+        <div class="control">
+
+          <label for="tradeEnd">
+            End
+          </label>
+
+          <input
+            id="tradeEnd"
+            type="datetime-local"
+          >
+
+        </div>
+
+      </div>
+
+
+      <div class="action-row">
+
+        <button
+          id="inspectTradesBtn"
+          class="primary"
+        >
+          Analyze Window
+        </button>
+
+      </div>
+
+
+      <div
+        id="analysisStatus"
+        class="analysis-status"
+      >
+        No analysis loaded.
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         TEMPORAL DENSITY
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Temporal Density
+          </h2>
+
+          <p class="panel-description">
+            Activity rate and activity relative to each
+            side's own temporal baseline.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="side-grid">
+
+
+        <!-- BUY -->
+
+        <div class="side-panel">
+
+          <div class="side-title buy-title">
+            Buy Taker
+          </div>
+
+
+          <div class="metric-grid">
+
+            <div class="metric">
+
+              <span class="metric-label">
+                TDA
+              </span>
+
+              <strong id="buyTDA">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Latest TDR
+              </span>
+
+              <strong id="buyTDR">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                SC
+              </span>
+
+              <strong id="buySC">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                SF
+              </span>
+
+              <strong id="buySF">
+                --
+              </strong>
+
+            </div>
+
+          </div>
+
+        </div>
+
+
+        <!-- SELL -->
+
+        <div class="side-panel">
+
+          <div class="side-title sell-title">
+            Sell Taker
+          </div>
+
+
+          <div class="metric-grid">
+
+            <div class="metric">
+
+              <span class="metric-label">
+                TDA
+              </span>
+
+              <strong id="sellTDA">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Latest TDR
+              </span>
+
+              <strong id="sellTDR">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                SC
+              </span>
+
+              <strong id="sellSC">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                SF
+              </span>
+
+              <strong id="sellSF">
+                --
+              </strong>
+
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         PAIRED TDR DOMINANCE
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Paired TDR Dominance
+          </h2>
+
+          <p class="panel-description">
+            Ordinally paired above-baseline TDR events.
+            Each side's average contains only the TDR
+            values from its winning pairs.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="side-grid">
+
+
+        <!-- BUY DOMINANCE -->
+
+        <div class="side-panel">
+
+          <div class="side-title buy-title">
+            Buy
+          </div>
+
+
+          <div class="metric-grid dominance-grid">
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Wins
+              </span>
+
+              <strong id="buyPairedWins">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Average
+              </span>
+
+              <strong id="buyPairedAverage">
+                --
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          <div class="slope-container">
+
+            <div class="chart-label">
+              Dominance progression
+            </div>
+
+            <canvas
+              id="buyDominanceChart"
+            ></canvas>
+
+          </div>
+
+        </div>
+
+
+        <!-- SELL DOMINANCE -->
+
+        <div class="side-panel">
+
+          <div class="side-title sell-title">
+            Sell
+          </div>
+
+
+          <div class="metric-grid dominance-grid">
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Wins
+              </span>
+
+              <strong id="sellPairedWins">
+                --
+              </strong>
+
+            </div>
+
+
+            <div class="metric">
+
+              <span class="metric-label">
+                Average
+              </span>
+
+              <strong id="sellPairedAverage">
+                --
+              </strong>
+
+            </div>
+
+          </div>
+
+
+          <div class="slope-container">
+
+            <div class="chart-label">
+              Dominance progression
+            </div>
+
+            <canvas
+              id="sellDominanceChart"
+            ></canvas>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         SPATIAL DENSITY
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Spatial Density
+          </h2>
+
+          <p class="panel-description">
+            Volume required per unit of spatial movement,
+            with both range definitions retained.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="spatial-grid">
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Envelope Range
+          </span>
+
+          <strong id="envelopeRange">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Path Range
+          </span>
+
+          <strong id="pathRange">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            SDA Envelope
+          </span>
+
+          <strong id="sdaEnvelope">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            SDA Path
+          </span>
+
+          <strong id="sdaPath">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            STD Envelope
+          </span>
+
+          <strong id="stdEnvelope">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            STD Path
+          </span>
+
+          <strong id="stdPath">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         TRANSACTION PARTICIPATION
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Transaction Participation
+          </h2>
+
+          <p class="panel-description">
+            Transaction-rate activity independent of volume
+            size.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="participation-grid">
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            TC / s
+          </span>
+
+          <strong id="transactionDensity">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            TCDA
+          </span>
+
+          <strong id="transactionDensityAverage">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            TCDR
+          </span>
+
+          <strong id="transactionDensityRatio">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            TCSC
+          </span>
+
+          <strong id="transactionSpikeCount">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            TCSF
+          </span>
+
+          <strong id="transactionSpikeFrequency">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Avg Volume / Transaction
+          </span>
+
+          <strong id="averageTransactionVolume">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+
+    <!-- ===================================================
+         RAW DATA SUMMARY
+    ==================================================== -->
+
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Analysis Summary
+          </h2>
+
+        </div>
+
+      </div>
+
+
+      <div class="summary-grid">
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Observations
+          </span>
+
+          <strong id="observationCount">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Duration
+          </span>
+
+          <strong id="analysisDuration">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Total Volume
+          </span>
+
+          <strong id="analysisVolume">
+            --
+          </strong>
+
+        </div>
+
+
+        <div class="metric">
+
+          <span class="metric-label">
+            Total Transactions
+          </span>
+
+          <strong id="analysisTransactions">
+            --
+          </strong>
+
+        </div>
+
+      </div>
+
+    </section>
+
+  </main>
+
+
+  <!-- =====================================================
+       FOOTER
+  ====================================================== -->
+
+  <footer>
+
+    <span>
+      Alpha Tracker
+    </span>
+
+    <span id="lastUpdated">
+      Last update: --
+    </span>
+
+  </footer>
+
+
+  <!-- =====================================================
+       APPLICATION
+  ====================================================== -->
+
+  <script
+    type="module"
+    src="./app.js?v=20261006-1"
+  ></script>
+
+</body>
+  </html>

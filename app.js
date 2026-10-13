@@ -710,6 +710,243 @@ function drawDominanceChart(
     );
   }
 }
+/*
+ * Draw cumulative STE progression as a staircase.
+ *
+ * Horizontal segments preserve the previous progression.
+ * Vertical segments show each +1 or -1 change.
+ */
+function drawSTEChart(
+  canvas,
+  observations,
+  side
+) {
+  if (!canvas) {
+    return;
+  }
+
+  const container = canvas.parentElement;
+
+  const width = Math.max(
+    280,
+    container.clientWidth
+  );
+
+  const height = Math.max(
+    150,
+    container.clientHeight
+  );
+
+  const dpr = window.devicePixelRatio || 1;
+
+  canvas.width = width * dpr;
+  canvas.height = height * dpr;
+
+  canvas.style.width = `${width}px`;
+  canvas.style.height = `${height}px`;
+
+  const ctx = canvas.getContext("2d");
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+  ctx.clearRect(0, 0, width, height);
+
+  if (!observations || observations.length === 0) {
+    ctx.fillStyle = "#8996a3";
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+
+    ctx.fillText(
+      "No STE observations",
+      width / 2,
+      height / 2
+    );
+
+    return;
+  }
+
+  const padding = {
+    left: 38,
+    right: 12,
+    top: 14,
+    bottom: 30
+  };
+
+  const chartWidth =
+    width - padding.left - padding.right;
+
+  const chartHeight =
+    height - padding.top - padding.bottom;
+
+  const values = observations.map(
+    observation => observation.progression
+  );
+
+  let minValue = Math.min(0, ...values);
+  let maxValue = Math.max(0, ...values);
+
+  if (minValue === maxValue) {
+    minValue -= 1;
+    maxValue += 1;
+  }
+
+  const verticalPadding =
+    Math.max(1, (maxValue - minValue) * 0.1);
+
+  minValue -= verticalPadding;
+  maxValue += verticalPadding;
+
+  const valueRange = maxValue - minValue;
+
+  function pointAt(index, value) {
+    const x =
+      observations.length === 1
+        ? padding.left + chartWidth / 2
+        : padding.left +
+          (index / (observations.length - 1)) *
+            chartWidth;
+
+    const y =
+      padding.top +
+      ((maxValue - value) / valueRange) *
+        chartHeight;
+
+    return { x, y };
+  }
+
+  /*
+   * Horizontal grid lines and Y-axis labels.
+   */
+  ctx.strokeStyle = "rgba(137,150,163,0.16)";
+  ctx.lineWidth = 1;
+
+  const gridLines = 4;
+
+  for (let i = 0; i <= gridLines; i++) {
+    const y =
+      padding.top +
+      (i / gridLines) * chartHeight;
+
+    ctx.beginPath();
+    ctx.moveTo(padding.left, y);
+    ctx.lineTo(width - padding.right, y);
+    ctx.stroke();
+
+    const value =
+      maxValue -
+      (i / gridLines) * valueRange;
+
+    ctx.fillStyle = "#8996a3";
+    ctx.font = "10px sans-serif";
+    ctx.textAlign = "right";
+    ctx.textBaseline = "middle";
+
+    ctx.fillText(
+      formatNumber(value, 0),
+      padding.left - 6,
+      y
+    );
+  }
+
+  const lineColor =
+    side === "buy"
+      ? "#35c98b"
+      : "#ff5f6d";
+
+  /*
+   * Draw staircase progression.
+   *
+   * Move horizontally to the next timestamp first,
+   * then vertically to the new progression value.
+   */
+  ctx.strokeStyle = lineColor;
+  ctx.lineWidth = 2;
+  ctx.lineJoin = "round";
+  ctx.beginPath();
+
+  observations.forEach((observation, index) => {
+    const point = pointAt(
+      index,
+      observation.progression
+    );
+
+    if (index === 0) {
+      ctx.moveTo(point.x, point.y);
+      return;
+    }
+
+    const previousPoint = pointAt(
+      index - 1,
+      observations[index - 1].progression
+    );
+
+    ctx.lineTo(point.x, previousPoint.y);
+    ctx.lineTo(point.x, point.y);
+  });
+
+  ctx.stroke();
+
+  /*
+   * Label selected timestamps on the X-axis.
+   */
+  ctx.fillStyle = "#8996a3";
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+
+  const labelCount = Math.min(
+    5,
+    observations.length
+  );
+
+  for (let i = 0; i < labelCount; i++) {
+    const index =
+      labelCount === 1
+        ? 0
+        : Math.round(
+            (i / (labelCount - 1)) *
+              (observations.length - 1)
+          );
+
+    const point = pointAt(
+      index,
+      observations[index].progression
+    );
+
+    const date = new Date(
+      observations[index].time
+    );
+
+    const label = date.toISOString().slice(11, 16);
+
+    ctx.fillText(
+      label,
+      point.x,
+      height - padding.bottom + 9
+    );
+  }
+}
+
+function renderSpacetimeEfficiency(metrics) {
+  const ste = metrics.spacetimeEfficiency;
+
+  if (!ste) {
+    return;
+  }
+
+  drawSTEChart(
+    elements.buySTEChart,
+    ste.buy,
+    "buy"
+  );
+
+  drawSTEChart(
+    elements.sellSTEChart,
+    ste.sell,
+    "sell"
+  );
+}
 
 function renderSpatialMetrics(metrics) {
   const spatial =
@@ -882,6 +1119,10 @@ function renderAnalysis(metrics) {
   );
 
   renderPairedDominance(
+    metrics
+  );
+
+  renderSpacetimeEfficiency(
     metrics
   );
 
@@ -1081,10 +1322,14 @@ function attachEvents() {
         "buy"
       );
 
-      drawDominanceChart(
+            drawDominanceChart(
         elements.sellDominanceChart,
         state.metrics.pairedDominance.sell.progression,
         "sell"
+      );
+
+      renderSpacetimeEfficiency(
+        state.metrics
       );
     }
   );

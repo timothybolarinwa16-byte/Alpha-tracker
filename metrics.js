@@ -733,5 +733,6 @@ export {
   calculatePairedTDRDominance,
   calculateSpatialMetrics,
   calculateTransactionMetrics,
+  calculateSpacetimeEfficiency,
   calculateAllMetrics
-};
+}; 

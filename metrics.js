@@ -506,7 +506,129 @@ function calculateTransactionMetrics(candles) {
     elapsedHours
   };
 }
+/*
+ * Spacetime Efficiency (STE)
+ *
+ * STE = envelope traversal speed / Temporal Density
+ *
+ * Envelope traversal speed = candle range / elapsed seconds
+ *
+ * STE = (candle range / elapsed seconds) / TD
+ *
+ * Progression logic:
+ *   STE increases -> progression +1
+ *   STE decreases -> progression -1
+ *   STE unchanged -> retain previous progression
+ *
+ * Buy and Sell are calculated independently.
+ * A zero TD produces no STE observation.
+ */
+function calculateSpacetimeEfficiency(
+  candles,
+  buyTemporal,
+  sellTemporal
+) {
+  function buildSide(temporal) {
+    const output = [];
 
+    if (!Array.isArray(candles) || candles.length < 2) {
+      return output;
+    }
+
+    /*
+     * Match temporal observations to candle indices.
+     */
+    const temporalByIndex = new Map(
+      temporal.observations.map(observation => [
+        observation.index,
+        observation
+      ])
+    );
+
+    let previousSTE = null;
+    let progression = 0;
+
+    for (let i = 1; i < candles.length; i++) {
+      const previous = candles[i - 1];
+      const current = candles[i];
+
+      const previousTime = safeNumber(previous.time);
+      const currentTime = safeNumber(current.time);
+
+      const elapsedSeconds =
+        (currentTime - previousTime) / 1000;
+
+      if (
+        !Number.isFinite(elapsedSeconds) ||
+        elapsedSeconds <= 0
+      ) {
+        continue;
+      }
+
+      const temporalObservation =
+        temporalByIndex.get(i);
+
+      const td = temporalObservation
+        ? positiveNumber(temporalObservation.td)
+        : 0;
+
+      /*
+       * STE cannot be calculated when TD is zero.
+       * Do not invent a value or change progression.
+       */
+      if (td <= 0) {
+        continue;
+      }
+
+      /*
+       * Current candle's envelope range.
+       */
+      const high = safeNumber(current.high);
+      const low = safeNumber(current.low);
+
+      const envelopeRange =
+        Math.max(0, high - low);
+
+      const traversalSpeed =
+        envelopeRange / elapsedSeconds;
+
+      const ste =
+        traversalSpeed / td;
+
+      if (previousSTE !== null) {
+        if (ste > previousSTE) {
+          progression += 1;
+        } else if (ste < previousSTE) {
+          progression -= 1;
+        }
+
+        /*
+         * If STE is unchanged, progression stays
+         * at its previous value, creating a plateau.
+         */
+      }
+
+      output.push({
+        index: i,
+        time: currentTime,
+        elapsedSeconds,
+        envelopeRange,
+        td,
+        ste,
+        progression
+      });
+
+      previousSTE = ste;
+    }
+
+    return output;
+  }
+
+  return {
+    buy: buildSide(buyTemporal),
+    sell: buildSide(sellTemporal)
+  };
+}
 /*
  * Full analysis bundle.
  *

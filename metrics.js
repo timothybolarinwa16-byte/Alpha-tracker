@@ -654,11 +654,18 @@ function calculateAllMetrics(candles) {
       sellTemporal
     );
 
-  const spatial =
+    const spatial =
     calculateSpatialMetrics(candles);
 
   const transactions =
     calculateTransactionMetrics(candles);
+
+  const spacetimeEfficiency =
+    calculateSpacetimeEfficiency(
+      candles,
+      buyTemporal,
+      sellTemporal
+    );
 
   const firstTime =
     candles?.length

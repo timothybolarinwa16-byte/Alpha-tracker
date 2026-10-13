@@ -698,7 +698,7 @@ function calculateAllMetrics(candles) {
         )
       : 0;
 
-  return {
+    return {
     buyTemporal,
     sellTemporal,
 
@@ -707,6 +707,8 @@ function calculateAllMetrics(candles) {
     spatial,
 
     transactions,
+
+    spacetimeEfficiency,
 
     summary: {
       observationCount:

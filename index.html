@@ -527,7 +527,83 @@
 
     </section>
 
+    <!-- ===================================================
+         SPACETIME EFFICIENCY
+    ==================================================== -->
 
+    <section class="panel">
+
+      <div class="panel-header">
+
+        <div>
+
+          <h2>
+            Spacetime Efficiency (STE)
+          </h2>
+
+          <p class="panel-description">
+            Cumulative directional progression of STE.
+            Rising STE adds +1, falling STE adds -1,
+            and unchanged STE preserves the previous level.
+            Horizontal plateaus represent unchanged STE.
+          </p>
+
+        </div>
+
+      </div>
+
+
+      <div class="side-grid">
+
+
+        <!-- BUY STE -->
+
+        <div class="side-panel">
+
+          <div class="side-title buy-title">
+            Buy STE Progression
+          </div>
+
+          <div class="chart-label">
+            Chronological progression
+          </div>
+
+          <div class="slope-container">
+
+            <canvas
+              id="buySTEChart"
+            ></canvas>
+
+          </div>
+
+        </div>
+
+
+        <!-- SELL STE -->
+
+        <div class="side-panel">
+
+          <div class="side-title sell-title">
+            Sell STE Progression
+          </div>
+
+          <div class="chart-label">
+            Chronological progression
+          </div>
+
+          <div class="slope-container">
+
+            <canvas
+              id="sellSTEChart"
+            ></canvas>
+
+          </div>
+
+        </div>
+
+      </div>
+
+    </section>
     <!-- ===================================================
          SPATIAL DENSITY
     ==================================================== -->

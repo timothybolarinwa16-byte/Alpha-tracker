@@ -50,6 +50,8 @@ const elements = {
 
   buyDominanceChart: $("buyDominanceChart"),
   sellDominanceChart: $("sellDominanceChart"),
+ buySTEChart: $("buySTEChart"),
+  sellSTEChart: $("sellSTEChart"),
 
   envelopeRange: $("envelopeRange"),
   pathRange: $("pathRange"),
